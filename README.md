@@ -1,6 +1,6 @@
 # Aachen Termin Checker
 
-Checks the StädteRegion Aachen Ausländerbehörde booking site every 10 minutes
+Checks the StädteRegion Aachen Ausländerbehörde booking site every 5 minutes
 (06:00–22:00 Berlin time) for **Infostelle → Beratungs- und Antragsservice**
 at Aachen Arkaden, and sends you a phone notification when a date earlier than
 `BEFORE_DATE` (default 23.12.2026) appears.
