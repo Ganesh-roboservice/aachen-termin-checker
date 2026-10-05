@@ -45,8 +45,13 @@ add `BEFORE_DATE` = e.g. `2026-11-30`.
 ## Notes
 - GitHub's schedule is best-effort: runs can be delayed by several minutes.
   Slots go fast, so open the booking page as soon as the alert arrives.
-- The alert's link jumps straight to the location step (click "Aachen Arkaden
-  auswählen" to see the dates). The start page link is included as a fallback.
+- The alert links to the start page: the site rejects deep links into the flow
+  without its session cookie. Click Infostelle → Beratungs- und Antragsservice
+  (+1) → Weiter → Weiter to reach the dates.
+- Every run checks it is on the right page: the Infostelle section, the exact
+  Anliegen, the Aachen Arkaden location, and the "Übersicht zu Ihrem Termin"
+  box on the dates page. If any of those don't match, it fails with `FLOW ERROR`
+  instead of reporting "nothing free".
 - Each date is alerted once. If it disappears and reappears, you're alerted again.
 - If the site changes its layout or the run ends up on an unexpected page, it
   fails with `FLOW ERROR` and GitHub emails you about the failed workflow.

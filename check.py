@@ -56,103 +56,109 @@ class FlowError(Exception):
 
 # ---------------------------------------------------------------- booking flow
 
-def find_cnc_id(html: str) -> str:
-    """Return the numeric id of the 'Beratungs- und Antragsservice' Anliegen."""
+def find_concern(html: str) -> tuple[str, str]:
+    """Return (mdt, cnc id) for SECTION -> ANLIEGEN on the start page.
+
+    Matches the section heading and the Anliegen name exactly, because other
+    sections (e.g. Fachhochschule Aachen) mention the same words in tooltips.
+    """
     soup = BeautifulSoup(html, "html.parser")
 
-    # Preferred: the <li> under the "Infostelle" heading whose text matches.
-    for heading in soup.find_all(["h3", "h2", "button", "a"]):
-        if SECTION in heading.get_text(" ", strip=True):
-            container = heading.find_next_sibling() or heading.parent
-            for li in container.find_all("li"):
-                if ANLIEGEN in li.get_text(" ", strip=True) and li.get("id"):
-                    return li["id"].split("-")[-1]
+    form = soup.find("form", id="cnc-select-form")
+    mdt_input = form.find("input", {"name": "mdt"}) if form else None
+    if mdt_input is None or not mdt_input.get("value"):
+        raise FlowError("No mdt field in the Anliegen form on the start page.")
 
-    # Fallback: any element mentioning the Anliegen that carries a cnc-<id> input.
-    for el in soup.find_all(string=re.compile(re.escape(ANLIEGEN))):
-        node = el.parent
-        for _ in range(6):
-            if node is None:
-                break
-            inp = node.find("input", attrs={"name": re.compile(r"^cnc-\d+$")})
-            if inp:
-                return inp["name"].split("-")[-1]
-            if node.get("id", "").rsplit("-", 1)[-1].isdigit():
-                return node["id"].rsplit("-", 1)[-1]
-            node = node.parent
+    heading = soup.find(
+        "h3",
+        id=re.compile(r"^header_concerns_accordion-"),
+        string=lambda s: s and s.strip() == SECTION,
+    )
+    if heading is None:
+        raise FlowError(f"No '{SECTION}' section on the start page.")
+    content = soup.find(id=heading["id"].replace("header_", "content_", 1))
+    inp = content.find("input", attrs={"data-tevis-cncname": ANLIEGEN}) if content else None
+    if inp is None or not inp.get("data-tevis-cncid"):
+        raise FlowError(f"No '{ANLIEGEN}' in the '{SECTION}' section.")
 
-    raise FlowError(f"Could not find '{ANLIEGEN}' under '{SECTION}' on the start page.")
+    print(f"Anliegen: {SECTION} -> {ANLIEGEN} (cnc {inp['data-tevis-cncid']}, mdt {mdt_input['value']})")
+    return mdt_input["value"], inp["data-tevis-cncid"]
 
 
 def location_payload(html: str) -> dict:
-    """Build the POST payload that selects the Aachen Arkaden location."""
+    """Build the POST payload that selects the Aachen Arkaden location.
+
+    The page has one form per location (plus a map form without the name), so
+    pick the form whose own text names the location.
+    """
     soup = BeautifulSoup(html, "html.parser")
-    loc_input = soup.find("input", {"name": "loc"})
-    if not loc_input:
-        raise FlowError("No location field on the location page.")
+    for form in soup.find_all("form"):
+        button = form.find("input", {"name": "select_location"})
+        if form.find("input", {"name": "loc"}) and button and LOCATION_HINT in form.get_text(" "):
+            payload = {
+                inp["name"]: inp.get("value", "")
+                for inp in form.find_all("input", {"type": "hidden"})
+                if inp.get("name")
+            }
+            payload["select_location"] = button.get("value", "")
+            print(f"Location: {LOCATION_HINT} (loc {payload.get('loc')})")
+            return payload
+    raise FlowError(f"No '{LOCATION_HINT}' location on the location page.")
 
-    # If there are several locations, prefer the one mentioning the hint.
-    form = loc_input.find_parent("form") or soup
-    buttons = form.find_all("input", {"name": "select_location"}) or soup.find_all(
-        "input", {"name": "select_location"}
-    )
-    chosen = next(
-        (b for b in buttons if LOCATION_HINT in (b.get("value") or "")),
-        buttons[0] if buttons else None,
-    )
 
-    payload = {"gps_lat": "50.77", "gps_long": "6.08"}
-    for hidden in form.find_all("input", {"type": "hidden"}):
-        name, value = hidden.get("name"), hidden.get("value", "")
-        if name and (value or name not in payload):
-            payload[name] = value
-    if chosen is not None:
-        # The loc hidden field sits next to its button in multi-location layouts.
-        sibling_loc = chosen.find_previous("input", {"name": "loc"})
-        if sibling_loc is not None:
-            payload["loc"] = sibling_loc.get("value", "")
-        payload["select_location"] = chosen.get("value", "")
-    else:
-        payload["loc"] = loc_input.get("value", "")
-        payload["select_location"] = "Ausländeramt Aachen - Aachen Arkaden auswählen"
-    return payload
+def check_selection(soup: BeautifulSoup) -> None:
+    """Make sure the suggestion page is for our Anliegen and location.
+
+    The page's "Übersicht zu Ihrem Termin" box lists what the session selected.
+    """
+    box = soup.find(id="infobox_content")
+    text = box.get_text(" ", strip=True) if box else ""
+    if ANLIEGEN not in text or LOCATION_HINT not in text:
+        raise FlowError(f"Suggestion page is not for {ANLIEGEN} at {LOCATION_HINT}: {text[:200]!r}")
 
 
 def parse_dates(html: str) -> list[date]:
-    """Extract available appointment dates from the suggestion page.
+    """Extract the days with at least one bookable slot from the suggestion page.
 
     Raises FlowError unless the page is clearly the date list or the
     "no appointment" page, so a wrong page can't silently pass as "nothing free".
     """
     soup = BeautifulSoup(html, "html.parser")
-    area = soup.find(id="sugg_accordion") or soup.find("summary", id="suggest_details_summary")
+    check_selection(soup)
+    area = soup.find(id="sugg_accordion")
     if area is None:
         if "Kein freier Termin verfügbar" in html:
             return []
         raise FlowError("Suggestion page had neither the date list nor the 'no appointment' text.")
 
-    found = set()
-    for heading in area.find_all(["h3", "summary", "button"]) or [area]:
-        for d, m, y in DATE_RE.findall(heading.get_text(" ", strip=True)):
-            try:
-                found.add(date(int(y), int(m), int(d)))
-            except ValueError:
-                pass
-    if not found:
+    # Each day is an <h3 title="Mittwoch, 23.12.2026"> followed by a panel of
+    # slots; greyed-out slots are disabled buttons, bookable ones are forms.
+    days, found = 0, set()
+    for heading in area.find_all("h3"):
+        match = DATE_RE.search(heading.get_text(" ", strip=True))
+        if not match:
+            continue
+        days += 1
+        panel = heading.find_next_sibling()
+        if panel is not None and panel.find("form", class_="suggestion_form"):
+            d, m, y = match.groups()
+            found.add(date(int(y), int(m), int(d)))
+    if days == 0:
         raise FlowError("Found the date list but could not read any dates from it.")
     return sorted(found)
 
 
-def fetch_available_dates() -> tuple[list[date], str]:
-    """Walk the booking flow; return the free dates and the location-step URL."""
+def fetch_available_dates() -> list[date]:
+    """Walk the booking flow and return the days with bookable slots."""
     s = requests.Session()
     s.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "de-DE,de;q=0.9"})
 
     r1 = s.get(START_URL, timeout=30)
     r1.raise_for_status()
-    cnc = find_cnc_id(r1.text)
+    mdt, cnc = find_concern(r1.text)
 
-    loc_url = f"{BASE}/location?mdt=89&select_cnc=1&cnc-{cnc}=1"
+    # Same GET the start page's "Weiter" button sends.
+    loc_url = f"{BASE}/location?mdt={mdt}&select_cnc=1&cnc-{cnc}=1"
     r2 = s.get(loc_url, timeout=30)
     r2.raise_for_status()
     payload = location_payload(r2.text)
@@ -160,12 +166,12 @@ def fetch_available_dates() -> tuple[list[date], str]:
     s.post(loc_url, data=payload, timeout=30).raise_for_status()
     r4 = s.get(SUGGEST_URL, timeout=30)
     r4.raise_for_status()
-    return parse_dates(r4.text), loc_url
+    return parse_dates(r4.text)
 
 
 # --------------------------------------------------------------- notifications
 
-def notify(text: str, link: str = BOOKING_LINK) -> bool:
+def notify(text: str) -> bool:
     """Send text via every configured channel; True if at least one succeeded."""
     sent = False
     token, chat = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
@@ -182,7 +188,7 @@ def notify(text: str, link: str = BOOKING_LINK) -> bool:
         r = requests.post(
             f"https://ntfy.sh/{topic}",
             data=text.encode("utf-8"),
-            headers={"Title": "Aachen Termin", "Priority": "urgent", "Click": link},
+            headers={"Title": "Aachen Termin", "Priority": "urgent", "Click": BOOKING_LINK},
             timeout=20,
         )
         print("ntfy:", r.status_code)
@@ -225,11 +231,10 @@ def main() -> int:
     before = datetime.strptime(os.getenv("BEFORE_DATE", "2026-12-23"), "%Y-%m-%d").date()
     state_file = os.getenv("STATE_FILE", "state.json")
 
-    dates, quick_link = fetch_available_dates()
+    dates = fetch_available_dates()
     today = now.date()
     early = [d for d in dates if today <= d < before]
     print(f"Available: {[d.isoformat() for d in dates][:10]} | before {before}: {[d.isoformat() for d in early]}")
-    print(f"Quick link: {quick_link}")
 
     notified = load_state(state_file)
     new = [d for d in early if d.isoformat() not in notified]
@@ -240,14 +245,13 @@ def main() -> int:
 
     if new and not dry:
         lines = "\n".join(d.strftime("• %a %d.%m.%Y") for d in new)
-        # The quick link skips the Infostelle/Anliegen clicks and lands on the
-        # location step; the start page is the fallback if it ever stops working.
+        # Deep links into the flow fail without the site's session cookie
+        # ("Kein gültiger Mandant"), so the alert links to the start page.
         msg = (
             f"🔥 Earlier Ausländeramt Aachen appointment available!\n"
-            f"{ANLIEGEN} (Aachen Arkaden)\n{lines}\n\n"
-            f"Book now: {quick_link}\nStart page: {BOOKING_LINK}"
+            f"{SECTION} → {ANLIEGEN} (Aachen Arkaden)\n{lines}\n\nBook now: {BOOKING_LINK}"
         )
-        if notify(msg, link=quick_link):
+        if notify(msg):
             notified |= {d.isoformat() for d in new}
 
     if not dry:
