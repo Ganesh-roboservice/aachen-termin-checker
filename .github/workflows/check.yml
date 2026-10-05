@@ -5,7 +5,7 @@ on:
     # Every 5 minutes, offset to :02/:07/... because GitHub delays or drops more
     # runs at :00. Cron is UTC, so 4-20 covers 06:00-22:00 Berlin in both summer
     # and winter time; check.py skips runs outside 06:00-22:00 Berlin.
-    - cron: "2-59/5 4-20 * * *"
+    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 4-20 * * *"
   workflow_dispatch:
     inputs:
       test_notify:
