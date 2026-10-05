@@ -1,0 +1,63 @@
+name: Check Aachen Termin
+
+on:
+  schedule:
+    # Every 10 minutes. Cron is UTC, so 4-20 covers 06:00-22:00 Berlin in both
+    # summer and winter time; check.py skips runs outside 06:00-22:00 Berlin.
+    - cron: "*/10 4-20 * * *"
+  workflow_dispatch:
+    inputs:
+      test_notify:
+        description: "Send a test notification instead of checking"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: termin-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run checker
+        env:
+          BEFORE_DATE: ${{ vars.BEFORE_DATE || '2026-12-23' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ "${{ inputs.test_notify }}" = "true" ]; then
+            python check.py --test-notify
+          else
+            python check.py
+          fi
+
+      - name: Save state / keep repo active
+        if: ${{ !inputs.test_notify }}
+        run: |
+          git config user.name "termin-bot"
+          git config user.email "termin-bot@users.noreply.github.com"
+          if [ -n "$(git status --porcelain state.json)" ]; then
+            git add state.json
+            git commit -m "Update notified dates"
+          elif [ $(( $(date +%s) - $(git log -1 --format=%ct) )) -gt $(( 30 * 86400 )) ]; then
+            # GitHub disables scheduled workflows after 60 days without repo activity.
+            git commit --allow-empty -m "Keepalive"
+          else
+            exit 0
+          fi
+          git push
