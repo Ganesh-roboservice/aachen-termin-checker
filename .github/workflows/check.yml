@@ -2,6 +2,8 @@ name: Check Aachen Termin
 
 on:
   schedule:
+    # Backup only: GitHub's scheduler barely fires for this repo, so the main
+    # trigger is cron-job.org calling workflow_dispatch (see README).
     # Every 5 minutes, offset to :02/:07/... because GitHub delays or drops more
     # runs at :00. Cron is UTC, so 4-20 covers 06:00-22:00 Berlin in both summer
     # and winter time; check.py skips runs outside 06:00-22:00 Berlin.
@@ -22,10 +24,14 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      # Check out the newest main, not the commit at trigger time, so a queued
+      # run sees the state.json the previous run just pushed.
       - uses: actions/checkout@v5
+        with:
+          ref: main
 
       - uses: actions/setup-python@v6
         with:

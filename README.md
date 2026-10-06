@@ -42,6 +42,19 @@ add `BEFORE_DATE` = e.g. `2026-11-30`.
 - tick *Send a test notification* → you should get a message on your phone.
 - run again without the tick → the log shows the dates it found.
 
+### 5. Reliable trigger (cron-job.org)
+GitHub's own schedule is best-effort and may barely run for a new repo, so a
+free cron-job.org job starts the workflow every 5 minutes instead:
+1. Create a fine-grained token at https://github.com/settings/personal-access-tokens/new:
+   only this repository, permission **Actions: Read and write**, nothing else.
+2. On cron-job.org create a job:
+   - URL: `https://api.github.com/repos/<owner>/<repo>/actions/workflows/check.yml/dispatches`
+   - Schedule: every 5 minutes, hours 6–21, time zone Europe/Berlin
+   - Method `POST`, body `{"ref":"main"}`
+   - Headers: `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`,
+     `X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`
+   - A successful call returns `204`.
+
 ## Notes
 - GitHub's schedule is best-effort: runs can be delayed by several minutes.
   Slots go fast, so open the booking page as soon as the alert arrives.
