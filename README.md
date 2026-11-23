@@ -1,7 +1,7 @@
 # Aachen Termin Checker
 
 Checks the StädteRegion Aachen Ausländerbehörde booking site every 5 minutes
-(06:00–22:00 Berlin time) for **Infostelle → Beratungs- und Antragsservice**
+(06:00–22:00 Berlin time) for **Abholung → Abholung Aufenthaltserlaubnis**
 at Aachen Arkaden, and sends you a phone notification when a date earlier than
 `BEFORE_DATE` (default 23.12.2026) appears.
 
@@ -59,9 +59,9 @@ free cron-job.org job starts the workflow every 5 minutes instead:
 - GitHub's schedule is best-effort: runs can be delayed by several minutes.
   Slots go fast, so open the booking page as soon as the alert arrives.
 - The alert links to the start page: the site rejects deep links into the flow
-  without its session cookie. Click Infostelle → Beratungs- und Antragsservice
+  without its session cookie. Click Abholung → Abholung Aufenthaltserlaubnis
   (+1) → Weiter → Weiter to reach the dates.
-- Every run checks it is on the right page: the Infostelle section, the exact
+- Every run checks it is on the right page: the Abholung section, the exact
   Anliegen, the Aachen Arkaden location, and the "Übersicht zu Ihrem Termin"
   box on the dates page. If any of those don't match, it fails with `FLOW ERROR`
   instead of reporting "nothing free".

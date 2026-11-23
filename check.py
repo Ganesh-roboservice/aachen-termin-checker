@@ -2,7 +2,7 @@
 Aachen Ausländerbehörde appointment checker.
 
 Walks the StädteRegion Aachen TEVIS booking flow for
-  Infostelle -> "Beratungs- und Antragsservice"
+  Abholung -> "Abholung Aufenthaltserlaubnis"
 and sends a notification (Telegram and/or ntfy) when a date earlier than
 BEFORE_DATE becomes available.
 
@@ -39,8 +39,8 @@ BOOKING_LINK = START_URL
 BERLIN = ZoneInfo("Europe/Berlin")
 ACTIVE_HOURS = (6, 22)
 
-SECTION = "Infostelle"
-ANLIEGEN = "Beratungs- und Antragsservice"
+SECTION = "Abholung"
+ANLIEGEN = "Abholung Aufenthaltserlaubnis"
 LOCATION_HINT = "Arkaden"  # "Ausländeramt Aachen - Aachen Arkaden, Trierer Straße 1"
 
 USER_AGENT = (
